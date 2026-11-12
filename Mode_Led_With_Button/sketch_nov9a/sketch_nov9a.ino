@@ -1,53 +1,59 @@
 #include <Arduino.h>
 
-// Nút bấm tích hợp trên bo ESP32 Relay x8 (GPIO 0)
-#define BUILTIN_BUTTON 0
+#define BUILTIN_BUTTON 0 //Button default trên Relay x8
 
-// Danh sách các chân kích 8 Relay trên bo
 const int relayPins[] = {32, 33, 25, 26, 27, 14, 12, 13};
 const int numRelays = sizeof(relayPins) / sizeof(relayPins[0]);
 
-// Mức kích logic của bo (Active HIGH: 1 = Bật, 0 = Tắt)
 #define RELAY_ON   HIGH
 #define RELAY_OFF  LOW
 
-// Quản lý chế độ (0 -> 4)
+/*
+kiểm soát các mode 0 -> 4
+mode 0: Tắt
+mode 1: Bật
+mode 2: Blink all
+mode 3: Chạy đuổi 2 chiều (1 -> 8 -> 1)
+mode 4: Sáng theo chiều 1 -> 8, rồi tắt theo chiều ngược lại
+*/
 int currentMode = 0;
 const int TOTAL_MODES = 5;
 
-// Biến quản lý nút bấm & chống dội phím (Debounce + Phân biệt Click / Long Press)
+// Quản lý nút bấm
 int lastButtonState = HIGH;
 unsigned long buttonPressTime = 0;
 bool isButtonPressed = false;
 const unsigned long debounceDelay = 40;
-const unsigned long longPressTime = 1000; // Nhấn giữ > 1s để đổi tốc độ
+const unsigned long longPressTime = 1000; 
 
-// Biến quản lý thời gian nháy (Non-blocking với millis)
+// Quản lý tốc độ Led 
 unsigned long previousBlinkMillis = 0;
-int blinkSpeed = 250;          // Tốc độ nháy mặc định: 250ms
-bool syncBlinkState = false;    // Trạng thái cho Mode 2
+int blinkSpeed = 250;        
 
-// Biến chạy đuổi cho Mode 3 (1 -> 8 -> 1)
+// Biến cho mode 2 
+bool syncBlinkState = false;    
+
+// Biến cho mode 3
 int chaseCurrentIndex = 0;
 int chaseDirection = 1;
 
-// Biến điều khiển hiệu ứng Fill-up cho Mode 4
+// Biến cho mode 4
 int fillStep = 0;
-bool isFilling = true;         // true: đang sáng dồn (1->8), false: đang tắt dồn (8->1)
+bool isFilling = true;     
 
-// Tắt toàn bộ 8 Relay
+
 void setAllRelaysOff() {
   for (int i = 0; i < numRelays; i++) {
     digitalWrite(relayPins[i], RELAY_OFF);
   }
 }
 
-// Bật toàn bộ 8 Relay
 void setAllRelaysOn() {
   for (int i = 0; i < numRelays; i++) {
     digitalWrite(relayPins[i], RELAY_ON);
   }
 }
+
 
 void setup() {
   Serial.begin(115200);
@@ -58,23 +64,10 @@ void setup() {
     pinMode(relayPins[i], OUTPUT);
     digitalWrite(relayPins[i], RELAY_OFF);
   }
-
-  Serial.println("\n=== ESP32 RELAY X8: FILL-UP (SANG 1->8, TAT 8->1) ===");
-  Serial.println("  Mode 0: TAT HET");
-  Serial.println("  Mode 1: BAT HET");
-  Serial.println("  Mode 2: BLINK DONG LOAT");
-  Serial.println("  Mode 3: BLINK CHAY DUOI 2 CHIEU");
-  Serial.println("  Mode 4: SANG DON (1->8) & TAT DON NGUOC (8->1)");
-  Serial.println("Lenh UART:");
-  Serial.println("  - S <ms>    : Doi toc do (VD: S 100, S 350)");
-  Serial.println("  - MODE <0-4>: Chuyen thang den Mode chi dinh");
-  Serial.println("=====================================================");
 }
 
 void loop() {
-  // ----------------------------------------------------
-  // 1. NHẬN LỆNH ĐIỀU CHỈNH TỪ CỔNG UART
-  // ----------------------------------------------------
+  // Nhận lệnh từ UART
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
@@ -105,30 +98,27 @@ void loop() {
     }
   }
 
-  // ----------------------------------------------------
-  // 2. QUÉT VÀ XỬ LÝ NÚT NHẤN (CLICK / LONG PRESS)
-  // ----------------------------------------------------
+  // Xử lý Button
   int reading = digitalRead(BUILTIN_BUTTON);
 
-  // Nhấn nút (cạnh xuống)
+  // Nhấn nút
   if (reading == LOW && lastButtonState == HIGH) {
     buttonPressTime = millis();
     isButtonPressed = true;
   }
 
-  // Nhả nút (cạnh lên)
+  // Nhả nút
   if (reading == HIGH && lastButtonState == LOW && isButtonPressed) {
     unsigned long pressDuration = millis() - buttonPressTime;
-
+  // Nhấn giữ  thay đổi tốc độ
     if (pressDuration >= longPressTime) {
-      // Nhấn giữ > 1 giây: Đổi nhanh tốc độ
       if (blinkSpeed == 100) blinkSpeed = 500;
       else if (blinkSpeed == 500) blinkSpeed = 1000;
       else blinkSpeed = 100;
       Serial.printf("[ESP32] -> Nhan giu: Doi toc do thanh %d ms\n", blinkSpeed);
     } 
     else if (pressDuration >= debounceDelay) {
-      // Nhấn nhả nhanh: Chuyển mode vòng tròn (0 -> 4)
+      // Nhấn nhả đổi mode
       currentMode = (currentMode + 1) % TOTAL_MODES;
       chaseCurrentIndex = 0;
       chaseDirection = 1;
@@ -163,12 +153,9 @@ void loop() {
   }
   lastButtonState = reading;
 
-  // ----------------------------------------------------
-  // 3. THỰC THI HIỆU ỨNG THEO CHẾ ĐỘ HIỆN TẠI
-  // ----------------------------------------------------
+  // Modes
   unsigned long currentMillis = millis();
-
-  // Mode 2: Nhấp nháy đồng loạt cả 8 kênh
+  // Mode 2
   if (currentMode == 2) {
     if (currentMillis - previousBlinkMillis >= (unsigned long)blinkSpeed) {
       previousBlinkMillis = currentMillis;
@@ -179,7 +166,7 @@ void loop() {
     }
   }
 
-  // Mode 3: Chạy đuổi 2 chiều (1 -> 8 -> 1)
+  // Mode 3
   else if (currentMode == 3) {
     if (currentMillis - previousBlinkMillis >= (unsigned long)blinkSpeed) {
       previousBlinkMillis = currentMillis;
@@ -200,25 +187,25 @@ void loop() {
     }
   }
 
-  // Mode 4: Sáng dồn từ 1->8 và tắt dần ngược chiều từ 8->1
+  // Mode 4
   else if (currentMode == 4) {
     if (currentMillis - previousBlinkMillis >= (unsigned long)blinkSpeed) {
       previousBlinkMillis = currentMillis;
 
       if (isFilling) {
-        // Bật dần: 0 -> 1 -> ... -> 7
+        
         digitalWrite(relayPins[fillStep], RELAY_ON);
         fillStep++;
         if (fillStep >= numRelays) {
-          fillStep = numRelays - 1; // Đổi mốc bắt đầu tắt từ 7
+          fillStep = numRelays - 1; 
           isFilling = false;
         }
       } else {
-        // Tắt dần ngược lại: 7 -> 6 -> ... -> 0
+        
         digitalWrite(relayPins[fillStep], RELAY_OFF);
         fillStep--;
         if (fillStep < 0) {
-          fillStep = 0;             // Reset về 0 để sáng dồn lại
+          fillStep = 0;             
           isFilling = true;
         }
       }
