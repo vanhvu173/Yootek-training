@@ -1,13 +1,10 @@
 #include <Arduino.h>
 
-// Danh sách chân GPIO của 8 Relay (tương ứng 8 đèn LED relay trên bo)
 const int relayPins[] = {32, 33, 25, 26, 27, 14, 12, 13};
 const int numRelays = sizeof(relayPins) / sizeof(relayPins[0]);
 
-// Chân User LED rời trên bo mạch (nếu muốn nháy riêng LED này)
 const int USER_LED_PIN = 23;
 
-// Đa số mạch ESP32 8 relay 5-30V dùng kích mức CAO (HIGH = Bật LED/Đóng Relay)
 #define RELAY_ON   HIGH
 #define RELAY_OFF  LOW
 
@@ -27,25 +24,15 @@ void turnAllOff() {
 void setup() {
   Serial.begin(115200);
   delay(1000);
-
-  // Cấu hình chân Output
   for (int i = 0; i < numRelays; i++) {
     pinMode(relayPins[i], OUTPUT);
     digitalWrite(relayPins[i], RELAY_OFF);
   }
   pinMode(USER_LED_PIN, OUTPUT);
   digitalWrite(USER_LED_PIN, LOW);
-
-  Serial.println("=== DIEU KHIEN BLINK LED RELAY X8 QUA UART ===");
-  Serial.println("Cac lenh dieu khien:");
-  Serial.println("  START      : Bat dau che do Blink chay duoi");
-  Serial.println("  STOP       : Dung blink va tat het den");
-  Serial.println("  SPEED <ms> : Doi toc do blink (Vi du: SPEED 100 hoac SPEED 500)");
-  Serial.println("===============================================");
 }
 
 void loop() {
-  // 1. Lắng nghe và xử lý lệnh từ cổng UART
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
